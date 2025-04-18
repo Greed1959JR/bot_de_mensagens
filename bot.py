@@ -69,7 +69,7 @@ async def enviar_mensagem_agendada(app, chat_id, mensagem):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    app = Application.builder().token("SEU_TOKEN_DO_BOT").build()
+    app = Application.builder().token("8071917672:AAG4R5z7b7w6PrOOLQ7Bi4nafMLy0LOL0I4").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
