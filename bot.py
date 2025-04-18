@@ -1,5 +1,4 @@
-from telegram import Update, InputMediaPhoto, ReplyKeyboardMarkup
-from telegram.constants import ChatAction
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes, ConversationHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
@@ -8,24 +7,18 @@ from threading import Thread
 import logging
 import asyncio
 
-# Estados do agendamento
 ESCOLHER_MENSAGEM, ESCOLHER_CONTEUDO, ESCOLHER_GRUPO, ESCOLHER_DIA, ESCOLHER_HORA, AGENDAMENTO_MANUAL = range(6)
 
-# Onde você salva mensagens agendadas
-agendamentos = {}
+mensagens_agendadas = []
 
-# Inicia o scheduler
-scheduler = BackgroundScheduler()
-scheduler.start()
-
-# Dicionário de grupos
 GRUPOS = {
     "vip": -1001234567890,
     "free": -1009876543210,
 }
 
-# Flask app para manter vivo no UptimeRobot
 flask_app = Flask(__name__)
+scheduler = BackgroundScheduler()
+scheduler.start()
 
 @flask_app.route("/")
 def home():
@@ -34,17 +27,17 @@ def home():
 def rodar_flask():
     flask_app.run(host="0.0.0.0", port=3000)
 
-async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Ação cancelada. Digite /start para começar novamente.", reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True))
-    return ConversationHandler.END
-
+# Etapas da conversa
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     botoes = [["📸 Enviar Foto"], ["📝 Enviar Texto"], ["❌ Cancelar"]]
-    await update.message.reply_text(
-        "Escolha o tipo de conteúdo que deseja enviar:",
-        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
-    )
+    await update.message.reply_text("Escolha o tipo de conteúdo que deseja enviar:",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True))
     return ESCOLHER_CONTEUDO
+
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Ação cancelada. Digite /start para começar novamente.",
+        reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True))
+    return ConversationHandler.END
 
 async def capturar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "cancelar" in update.message.text.lower():
@@ -56,10 +49,8 @@ async def capturar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def capturar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mensagem'] = update.message
     botoes = [["VIP"], ["FREE"], ["❌ Cancelar"]]
-    await update.message.reply_text(
-        "Para qual grupo deseja enviar?",
-        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
-    )
+    await update.message.reply_text("Para qual grupo deseja enviar?",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True))
     return ESCOLHER_GRUPO
 
 async def escolher_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,10 +62,8 @@ async def escolher_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ESCOLHER_GRUPO
     context.user_data['grupo'] = grupo
     botoes = [["Hoje"], ["Amanhã"], ["✍️ Inserir data manualmente"], ["❌ Cancelar"]]
-    await update.message.reply_text(
-        "Deseja agendar para hoje, amanhã ou inserir manualmente?",
-        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
-    )
+    await update.message.reply_text("Deseja agendar para hoje, amanhã ou inserir manualmente?",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True))
     return ESCOLHER_DIA
 
 async def escolher_dia(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +73,7 @@ async def escolher_dia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hoje = datetime.now()
     if dia == "hoje":
         context.user_data['data_base'] = hoje
-    elif dia == "amanhã" or dia == "amanha":
+    elif dia in ["amanhã", "amanha"]:
         context.user_data['data_base'] = hoje + timedelta(days=1)
     elif "manual" in dia:
         await update.message.reply_text("Digite a data e hora no formato dd/mm/aaaa hh:mm")
@@ -92,42 +81,10 @@ async def escolher_dia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Escolha 'Hoje', 'Amanhã' ou 'Inserir manualmente'.")
         return ESCOLHER_DIA
-
     botoes = [[str(h) for h in range(6, 13)], [str(h) for h in range(13, 19)], [str(h) for h in range(19, 24)], ["❌ Cancelar"]]
-    await update.message.reply_text(
-        "Escolha o horário para envio (hora cheia):",
-        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
-    )
+    await update.message.reply_text("Escolha o horário para envio (hora cheia):",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True))
     return ESCOLHER_HORA
-
-async def _enviar_mensagem_agendada(app, chat_id, mensagem):
-    if mensagem.text:
-        await app.bot.send_message(chat_id=chat_id, text=mensagem.text)
-    elif mensagem.photo:
-        await app.bot.send_photo(chat_id=chat_id, photo=mensagem.photo[-1].file_id, caption=mensagem.caption or "")
-
-async def agendamento_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        data = datetime.strptime(update.message.text.strip(), "%d/%m/%Y %H:%M")
-        grupo_id = GRUPOS[context.user_data['grupo']]
-        mensagem = context.user_data['mensagem']
-
-        def tarefa():
-            context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
-
-        scheduler.add_job(
-            func=lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
-            trigger='date',
-            run_date=data,
-        )
-
-        await update.message.reply_text(f"✅ Mensagem agendada para {data.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
-        return ConversationHandler.END
-
-    except Exception as e:
-        await update.message.reply_text("❌ Formato inválido. Tente novamente: dd/mm/aaaa hh:mm")
-        print(e)
-        return AGENDAMENTO_MANUAL
 
 async def escolher_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -135,27 +92,93 @@ async def escolher_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = context.user_data['data_base'].replace(hour=hora, minute=0, second=0, microsecond=0)
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
-
         def tarefa():
             context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
-
-        scheduler.add_job(
-            func=lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
-            trigger='date',
-            run_date=data,
-        )
-
+        scheduler.add_job(lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
+                          trigger='date', run_date=data)
+        mensagens_agendadas.append({"data": data.strftime("%d/%m/%Y %H:%M"), "grupo": context.user_data['grupo']})
         await update.message.reply_text(f"✅ Mensagem agendada para {data.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
         return ConversationHandler.END
-
-    except Exception as e:
-        await update.message.reply_text("❌ Horário inválido. Tente novamente escolhendo um número inteiro de hora.")
-        print(e)
+    except:
+        await update.message.reply_text("❌ Horário inválido. Tente novamente.")
         return ESCOLHER_HORA
+
+async def agendamento_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        data = datetime.strptime(update.message.text.strip(), "%d/%m/%Y %H:%M")
+        grupo_id = GRUPOS[context.user_data['grupo']]
+        mensagem = context.user_data['mensagem']
+        def tarefa():
+            context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
+        scheduler.add_job(lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
+                          trigger='date', run_date=data)
+        mensagens_agendadas.append({"data": data.strftime("%d/%m/%Y %H:%M"), "grupo": context.user_data['grupo']})
+        await update.message.reply_text(f"✅ Mensagem agendada para {data.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
+        return ConversationHandler.END
+    except:
+        await update.message.reply_text("❌ Formato inválido. Tente novamente: dd/mm/aaaa hh:mm")
+        return AGENDAMENTO_MANUAL
+
+async def _enviar_mensagem_agendada(app, chat_id, mensagem):
+    if mensagem.text:
+        await app.bot.send_message(chat_id=chat_id, text=mensagem.text)
+    elif mensagem.photo:
+        await app.bot.send_photo(chat_id=chat_id, photo=mensagem.photo[-1].file_id, caption=mensagem.caption or "")
+
+# Comandos auxiliares
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    botoes = [["/start"], ["/listar"]]
+    await update.message.reply_text("📋 Menu principal:",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True))
+
+async def listar_agendadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not mensagens_agendadas:
+        await update.message.reply_text("📭 Nenhuma mensagem agendada.")
+        return
+    texto = "🕒 Mensagens agendadas:\n\n"
+    for i, msg in enumerate(mensagens_agendadas, 1):
+        texto += f"{i}. {msg['data']} - Grupo: {msg['grupo'].upper()}\n"
+    await update.message.reply_text(texto)
+
+async def cancelar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not mensagens_agendadas:
+        await update.message.reply_text("📭 Nenhuma mensagem para cancelar.")
+        return
+    try:
+        index = int(update.message.text.split()[1]) - 1
+        if 0 <= index < len(mensagens_agendadas):
+            mensagem_removida = mensagens_agendadas.pop(index)
+            await update.message.reply_text(f"❌ Mensagem para {mensagem_removida['data']} no grupo {mensagem_removida['grupo'].upper()} foi cancelada.")
+        else:
+            await update.message.reply_text("Número inválido. Use /listar para ver os agendamentos.")
+    except:
+        await update.message.reply_text("Formato inválido. Use: /cancelar <número da mensagem>")
+
+async def repetir_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not mensagens_agendadas:
+        await update.message.reply_text("📭 Nenhuma mensagem para repetir.")
+        return
+    try:
+        index = int(update.message.text.split()[1]) - 1
+        if 0 <= index < len(mensagens_agendadas):
+            agendada = mensagens_agendadas[index]
+            grupo_id = GRUPOS[agendada['grupo']]
+            now = datetime.now() + timedelta(seconds=5)
+            def tarefa():
+                context.application.create_task(
+                    context.application.bot.send_message(chat_id=grupo_id, text=f"🔁 Reenvio: mensagem agendada para {agendada['data']}")
+                )
+            scheduler.add_job(lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
+                              trigger='date', run_date=now)
+            await update.message.reply_text("🔁 Mensagem será reenviada em instantes!")
+        else:
+            await update.message.reply_text("Número inválido. Use /listar para ver os agendamentos.")
+    except:
+        await update.message.reply_text("Formato inválido. Use: /repetir <número da mensagem>")
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    app = Application.builder().token("8071917672:AAG4R5z7b7w6PrOOLQ7Bi4nafMLy0LOL0I4").build()
+    app = Application.builder().token("SEU_TOKEN_AQUI").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -172,6 +195,11 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("listar", listar_agendadas))
+    app.add_handler(CommandHandler("cancelar", cancelar_mensagem))
+    app.add_handler(CommandHandler("repetir", repetir_mensagem))
+
     print("Bot rodando...")
     Thread(target=rodar_flask).start()
     app.run_polling()
