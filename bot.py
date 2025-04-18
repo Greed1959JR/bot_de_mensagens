@@ -1,4 +1,5 @@
-from telegram import Update, ChatAction
+from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes, ConversationHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -22,13 +23,11 @@ GRUPOS = {
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Me envie a mensagem que deseja agendar (pode ser texto, foto, etc).")
-
     return ESCOLHER_GRUPO
 
 async def capturar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mensagem'] = update.message  # Salva a mensagem completa (pode ser texto, foto, etc)
     await update.message.reply_text("Para qual grupo deseja enviar? (vip / free)")
-
     return ESCOLHER_DATA
 
 async def escolher_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,7 +38,6 @@ async def escolher_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['grupo'] = grupo
     await update.message.reply_text("Quando deseja enviar? (formato: dd/mm/aaaa hh:mm)")
-
     return ConversationHandler.END
 
 async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
