@@ -33,6 +33,13 @@ def home():
 def rodar_flask():
     flask_app.run(host="0.0.0.0", port=3000)
 
+# ✅ Utilitário seguro para agendamento de envio no apscheduler
+# Isso evita o erro de execução atrasada em ambientes como Render
+def agendar_envio_seguro(application, grupo_id, mensagem, data):
+    def tarefa():
+        asyncio.run_coroutine_threadsafe(_enviar_mensagem_agendada(application, grupo_id, mensagem), application.loop)
+    scheduler.add_job(tarefa, trigger='date', run_date=data)
+
 # Etapas da conversa
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     botoes = [["📸 Enviar Foto"], ["📝 Enviar Texto"], ["❌ Cancelar"]]
@@ -98,10 +105,7 @@ async def escolher_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = context.user_data['data_base'].replace(hour=hora, minute=0, second=0, microsecond=0)
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
-        def tarefa():
-            context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
-        scheduler.add_job(lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
-                          trigger='date', run_date=data)
+        agendar_envio_seguro(context.application, grupo_id, mensagem, data)
         mensagens_agendadas.append({"data": data.strftime("%d/%m/%Y %H:%M"), "grupo": context.user_data['grupo']})
         await update.message.reply_text(f"✅ Mensagem agendada para {data.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
         return ConversationHandler.END
@@ -114,16 +118,14 @@ async def agendamento_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
         data = fuso_brasilia.localize(datetime.strptime(update.message.text.strip(), "%d/%m/%Y %H:%M"))  # ✅ Adicionado fuso na data manual
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
-        def tarefa():
-            context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
-        scheduler.add_job(lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
-                          trigger='date', run_date=data)
+        agendar_envio_seguro(context.application, grupo_id, mensagem, data)
         mensagens_agendadas.append({"data": data.strftime("%d/%m/%Y %H:%M"), "grupo": context.user_data['grupo']})
         await update.message.reply_text(f"✅ Mensagem agendada para {data.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Formato inválido. Tente novamente: dd/mm/aaaa hh:mm")
         return AGENDAMENTO_MANUAL
+
 async def _enviar_mensagem_agendada(app, chat_id, mensagem):
     if mensagem.text:
         await app.bot.send_message(chat_id=chat_id, text=mensagem.text)
