@@ -3,6 +3,8 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes, ConversationHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
+from flask import Flask
+from threading import Thread
 import logging
 
 # Estados do agendamento
@@ -20,6 +22,16 @@ GRUPOS = {
     "vip": -1001234567890,   # substitua pelo ID real do grupo VIP
     "free": -1009876543210,  # substitua pelo ID real do grupo FREE
 }
+
+# Flask app para manter vivo no UptimeRobot
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "Bot online!"
+
+def rodar_flask():
+    flask_app.run(host="0.0.0.0", port=3000)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Me envie a mensagem que deseja agendar (pode ser texto, foto, etc).")
@@ -85,6 +97,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, agendar_mensagem))
 
     print("Bot rodando...")
+    Thread(target=rodar_flask).start()  # Inicia o servidor Flask numa thread separada
     app.run_polling()
 
 if __name__ == "__main__":
