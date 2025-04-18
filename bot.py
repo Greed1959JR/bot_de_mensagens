@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InputMediaPhoto, ReplyKeyboardMarkup
 from telegram.constants import ChatAction
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes, ConversationHandler
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -6,9 +6,10 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import logging
+import asyncio
 
 # Estados do agendamento
-ESCOLHER_GRUPO, ESCOLHER_DATA = range(2)
+ESCOLHER_MENSAGEM, ESCOLHER_CONTEUDO, ESCOLHER_GRUPO, ESCOLHER_DATA = range(4)
 
 # Onde você salva mensagens agendadas
 agendamentos = {}
@@ -34,23 +35,36 @@ def rodar_flask():
     flask_app.run(host="0.0.0.0", port=3000)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Me envie a mensagem que deseja agendar (pode ser texto, foto, etc).")
-    return ESCOLHER_GRUPO
+    botoes = [["📸 Enviar Foto"], ["📝 Enviar Texto"]]
+    await update.message.reply_text(
+        "Escolha o tipo de conteúdo que deseja enviar:",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return ESCOLHER_CONTEUDO
+
+async def capturar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['tipo'] = "foto" if "foto" in update.message.text.lower() else "texto"
+    await update.message.reply_text("Me envie a mensagem que deseja agendar.")
+    return ESCOLHER_MENSAGEM
 
 async def capturar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['mensagem'] = update.message  # Salva a mensagem completa (pode ser texto, foto, etc)
-    await update.message.reply_text("Para qual grupo deseja enviar? (vip / free)")
-    return ESCOLHER_DATA
+    context.user_data['mensagem'] = update.message
+    botoes = [["VIP"], ["FREE"]]
+    await update.message.reply_text(
+        "Para qual grupo deseja enviar?",
+        reply_markup=ReplyKeyboardMarkup(botoes, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return ESCOLHER_GRUPO
 
 async def escolher_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    grupo = update.message.text.lower()
+    grupo = update.message.text.lower().strip()
     if grupo not in GRUPOS:
-        await update.message.reply_text("Grupo inválido. Digite 'vip' ou 'free'.")
-        return ESCOLHER_DATA
+        await update.message.reply_text("Grupo inválido. Escolha 'VIP' ou 'FREE'.")
+        return ESCOLHER_GRUPO
 
     context.user_data['grupo'] = grupo
     await update.message.reply_text("Quando deseja enviar? (formato: dd/mm/aaaa hh:mm)")
-    return ConversationHandler.END
+    return ESCOLHER_DATA
 
 async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -58,7 +72,6 @@ async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
 
-        # Agenda o envio
         scheduler.add_job(
             func=enviar_mensagem_agendada,
             trigger='date',
@@ -72,12 +85,14 @@ async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Data/hora inválida. Tente novamente. (formato: dd/mm/aaaa hh:mm)")
         print(e)
 
-async def enviar_mensagem_agendada(app, chat_id, mensagem):
+def enviar_mensagem_agendada(app, chat_id, mensagem):
+    asyncio.run(_enviar_mensagem_agendada(app, chat_id, mensagem))
+
+async def _enviar_mensagem_agendada(app, chat_id, mensagem):
     if mensagem.text:
         await app.bot.send_message(chat_id=chat_id, text=mensagem.text)
     elif mensagem.photo:
         await app.bot.send_photo(chat_id=chat_id, photo=mensagem.photo[-1].file_id, caption=mensagem.caption or "")
-    # Pode adicionar outros tipos (vídeo, áudio, etc) se quiser
 
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -86,18 +101,19 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            ESCOLHER_GRUPO: [MessageHandler(filters.ALL & ~filters.COMMAND, capturar_mensagem)],
-            ESCOLHER_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, escolher_grupo)],
+            ESCOLHER_CONTEUDO: [MessageHandler(filters.TEXT & ~filters.COMMAND, capturar_tipo)],
+            ESCOLHER_MENSAGEM: [MessageHandler(filters.ALL & ~filters.COMMAND, capturar_mensagem)],
+            ESCOLHER_GRUPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, escolher_grupo)],
+            ESCOLHER_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, agendar_mensagem)],
         },
         fallbacks=[],
         allow_reentry=True
     )
 
     app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, agendar_mensagem))
 
     print("Bot rodando...")
-    Thread(target=rodar_flask).start()  # Inicia o servidor Flask numa thread separada
+    Thread(target=rodar_flask).start()
     app.run_polling()
 
 if __name__ == "__main__":
