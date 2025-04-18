@@ -1,3 +1,4 @@
+pytz
 Flask
 python-telegram-bot==20.6
 APScheduler
