@@ -12,8 +12,8 @@ ESCOLHER_MENSAGEM, ESCOLHER_CONTEUDO, ESCOLHER_GRUPO, ESCOLHER_DIA, ESCOLHER_HOR
 mensagens_agendadas = []
 
 GRUPOS = {
-    "vip": -1001234567890,
-    "free": -1009876543210,
+    "vip": -1002600167995,
+    "free": -1002508674229,
 }
 
 flask_app = Flask(__name__)
@@ -178,7 +178,7 @@ async def repetir_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    app = Application.builder().token("SEU_TOKEN_AQUI").build()
+    app = Application.builder().token("8071917672:AAG4R5z7b7w6PrOOLQ7Bi4nafMLy0LOL0I4").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
