@@ -72,11 +72,15 @@ async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
 
+        def tarefa():
+            context.application.create_task(_enviar_mensagem_agendada(context.application, grupo_id, mensagem))
+
+        context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa)
+
         scheduler.add_job(
-            func=enviar_mensagem_agendada,
+            func=lambda: context.application.job_queue._dispatcher.application.loop.call_soon_threadsafe(tarefa),
             trigger='date',
             run_date=horario,
-            args=[context.application, grupo_id, mensagem],
         )
 
         await update.message.reply_text(f"✅ Mensagem agendada para {horario.strftime('%d/%m/%Y %H:%M')} no grupo {context.user_data['grupo'].upper()}.")
@@ -84,9 +88,6 @@ async def agendar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("❌ Data/hora inválida. Tente novamente. (formato: dd/mm/aaaa hh:mm)")
         print(e)
-
-def enviar_mensagem_agendada(app, chat_id, mensagem):
-    asyncio.run(_enviar_mensagem_agendada(app, chat_id, mensagem))
 
 async def _enviar_mensagem_agendada(app, chat_id, mensagem):
     if mensagem.text:
