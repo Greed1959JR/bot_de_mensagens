@@ -185,7 +185,7 @@ async def repetir_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    app = Application.builder().token("8071917672:AAG4R5z7b7w6PrOOLQ7Bi4nafMLy0LOL0I4").build()
+    app = Application.builder().token("8071917672:AAGTrFy3N0ifNBdVO-cggn1757b_qDzRzNs").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
