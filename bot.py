@@ -8,6 +8,8 @@ from pytz import timezone  # ✅ Importação adicionada para fuso horário
 import logging
 import asyncio
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
 ESCOLHER_MENSAGEM, ESCOLHER_CONTEUDO, ESCOLHER_GRUPO, ESCOLHER_DIA, ESCOLHER_HORA, AGENDAMENTO_MANUAL = range(6)
 
 mensagens_agendadas = []
@@ -185,7 +187,7 @@ async def repetir_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    app = Application.builder().token("8071917672:AAGTrFy3N0ifNBdVO-cggn1757b_qDzRzNs").build()
+    app = Application.builder().token("TELEGRAM_TOKEN").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
