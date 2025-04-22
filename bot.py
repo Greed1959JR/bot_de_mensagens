@@ -1,3 +1,4 @@
+import os
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes, ConversationHandler
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -9,6 +10,8 @@ import logging
 import asyncio
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 ESCOLHER_MENSAGEM, ESCOLHER_CONTEUDO, ESCOLHER_GRUPO, ESCOLHER_DIA, ESCOLHER_HORA, AGENDAMENTO_MANUAL = range(6)
 
