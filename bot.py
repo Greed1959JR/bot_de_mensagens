@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
-from pytz import timezone  # ✅ Importação adicionada para fuso horário
+from pytz import timezone
 import logging
 import asyncio
 
@@ -23,11 +23,7 @@ GRUPOS = {
 }
 
 flask_app = Flask(__name__)
-
-# ✅ Definindo o fuso horário para horário de Brasília
 fuso_brasilia = timezone('America/Sao_Paulo')
-
-# ✅ Usando o timezone na instância do scheduler
 scheduler = BackgroundScheduler(timezone=fuso_brasilia)
 scheduler.start()
 
@@ -38,14 +34,11 @@ def home():
 def rodar_flask():
     flask_app.run(host="0.0.0.0", port=3000)
 
-# ✅ Utilitário seguro para agendamento de envio no apscheduler
-# Isso evita o erro de execução atrasada em ambientes como Render
 def agendar_envio_seguro(application, grupo_id, mensagem, data):
     def tarefa():
         asyncio.run_coroutine_threadsafe(_enviar_mensagem_agendada(application, grupo_id, mensagem), application.loop)
     scheduler.add_job(tarefa, trigger='date', run_date=data)
 
-# Etapas da conversa
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     botoes = [["📸 Enviar Foto"], ["📝 Enviar Texto"], ["❌ Cancelar"]]
     await update.message.reply_text("Escolha o tipo de conteúdo que deseja enviar:",
@@ -88,7 +81,7 @@ async def escolher_dia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dia = update.message.text.strip().lower()
     if "cancelar" in dia:
         return await cancelar(update, context)
-    hoje = datetime.now(fuso_brasilia)  # ✅ Data com fuso horário
+    hoje = datetime.now(fuso_brasilia)
     if dia == "hoje":
         context.user_data['data_base'] = hoje
     elif dia in ["amanhã", "amanha"]:
@@ -120,7 +113,7 @@ async def escolher_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def agendamento_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        data = fuso_brasilia.localize(datetime.strptime(update.message.text.strip(), "%d/%m/%Y %H:%M"))  # ✅ Adicionado fuso na data manual
+        data = fuso_brasilia.localize(datetime.strptime(update.message.text.strip(), "%d/%m/%Y %H:%M"))
         grupo_id = GRUPOS[context.user_data['grupo']]
         mensagem = context.user_data['mensagem']
         agendar_envio_seguro(context.application, grupo_id, mensagem, data)
@@ -137,7 +130,6 @@ async def _enviar_mensagem_agendada(app, chat_id, mensagem):
     elif mensagem.photo:
         await app.bot.send_photo(chat_id=chat_id, photo=mensagem.photo[-1].file_id, caption=mensagem.caption or "")
 
-# Comandos auxiliares
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     botoes = [["/start"], ["/listar"]]
     await update.message.reply_text("\ud83d\udccb Menu principal:",
@@ -175,7 +167,7 @@ async def repetir_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if 0 <= index < len(mensagens_agendadas):
             agendada = mensagens_agendadas[index]
             grupo_id = GRUPOS[agendada['grupo']]
-            now = datetime.now(brasilia) + timedelta(seconds=5)
+            now = datetime.now(fuso_brasilia) + timedelta(seconds=5)
             def tarefa():
                 context.application.create_task(
                     context.application.bot.send_message(chat_id=grupo_id, text=f"\ud83d\udd01 Reenvio: mensagem agendada para {agendada['data']}")
